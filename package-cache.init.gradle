@@ -1,0 +1,27 @@
+// Sends Gradle's Maven Central and Gradle Plugin Portal downloads to the Infragnite package cache.
+// Installed by the package-cache action, which sets PACKAGE_CACHE_URL and PACKAGE_CACHE_TOKEN.
+def cacheUrl = System.getenv('PACKAGE_CACHE_URL')
+def cacheToken = System.getenv('PACKAGE_CACHE_TOKEN')
+if (!cacheUrl || !cacheToken) {
+    throw new GradleException('package-cache init script: PACKAGE_CACHE_URL and PACKAGE_CACHE_TOKEN must be set (run the package-cache action)')
+}
+def cachedHosts = ['repo.maven.apache.org', 'repo1.maven.org', 'plugins.gradle.org'] as Set
+def useCache = { RepositoryHandler repositories ->
+    repositories.withType(MavenArtifactRepository).configureEach { repo ->
+        if (repo.url.host in cachedHosts) {
+            repo.url = "$cacheUrl/maven"
+            repo.credentials { username = 'ci'; password = cacheToken }
+            // Send the token with the first request instead of waiting for a 401.
+            repo.authentication { basic(BasicAuthentication) }
+        }
+    }
+}
+beforeSettings { settings ->
+    useCache(settings.pluginManagement.repositories)
+    useCache(settings.dependencyResolutionManagement.repositories)
+    useCache(settings.buildscript.repositories)
+}
+allprojects { project ->
+    useCache(project.buildscript.repositories)
+    useCache(project.repositories)
+}

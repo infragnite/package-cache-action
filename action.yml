@@ -1,0 +1,98 @@
+name: 'Package cache'
+description: >-
+  Gets a token for the Infragnite package cache with the job's GitHub OIDC token and sends Gradle's
+  Maven Central and Plugin Portal downloads through the cache. The job needs `permissions: id-token: write`
+  and its repository or owner in the cache's trust list.
+
+inputs:
+  url:
+    description: 'The package cache'
+    required: false
+    default: 'https://maven.infragnite.dev'
+  gradle:
+    description: "Send Gradle's Maven Central and Plugin Portal downloads through the cache"
+    required: false
+    default: 'true'
+  maven:
+    description: "Send Maven's Central downloads through the cache (writes ~/.m2/settings.xml, which must not exist yet)"
+    required: false
+    default: 'false'
+
+outputs:
+  token:
+    description: 'The cache token (6 h), for other downloads: Basic auth with any user name, or Bearer'
+    value: ${{ steps.token.outputs.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Get a package cache token
+      id: token
+      shell: bash
+      env:
+        CACHE_URL: ${{ inputs.url }}
+      run: |
+        set -euo pipefail
+        if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+          echo "::error::package-cache: no GitHub OIDC token; the job needs 'permissions: id-token: write'"
+          exit 1
+        fi
+        audience="${CACHE_URL#https://}"
+        oidc_response=$(curl -fsS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+          "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" || true)
+        oidc=$(printf '%s' "$oidc_response" | sed -n 's/.*"value":"\([^"]*\)".*/\1/p')
+        if [ -z "$oidc" ]; then
+          echo "::error::package-cache: GitHub did not issue an OIDC token"
+          exit 1
+        fi
+        cache_response=$(curl -sS -X POST -H "Authorization: Bearer $oidc" "$CACHE_URL/token" || true)
+        token=$(printf '%s' "$cache_response" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+        if [ -z "$token" ]; then
+          echo "::error::package-cache: $CACHE_URL refused the OIDC token: $cache_response"
+          exit 1
+        fi
+        echo "::add-mask::$token"
+        echo "token=$token" >> "$GITHUB_OUTPUT"
+        {
+          echo "PACKAGE_CACHE_URL=$CACHE_URL"
+          echo "PACKAGE_CACHE_TOKEN=$token"
+        } >> "$GITHUB_ENV"
+
+    - name: Send Gradle's downloads through the cache
+      if: inputs.gradle == 'true'
+      shell: bash
+      run: |
+        init_d="${GRADLE_USER_HOME:-$HOME/.gradle}/init.d"
+        mkdir -p "$init_d"
+        cp "$GITHUB_ACTION_PATH/package-cache.init.gradle" "$init_d/package-cache.gradle"
+
+    - name: Send Maven's downloads through the cache
+      if: inputs.maven == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        settings="$HOME/.m2/settings.xml"
+        if [ -e "$settings" ]; then
+          echo "::error::package-cache: $settings already exists; run this action before anything that writes it"
+          exit 1
+        fi
+        mkdir -p "$HOME/.m2"
+        # The token is read from the environment, so it is not written to disk.
+        cat > "$settings" <<'XML'
+        <settings>
+          <servers>
+            <server>
+              <id>package-cache</id>
+              <username>ci</username>
+              <password>${env.PACKAGE_CACHE_TOKEN}</password>
+            </server>
+          </servers>
+          <mirrors>
+            <mirror>
+              <id>package-cache</id>
+              <mirrorOf>central</mirrorOf>
+              <url>${env.PACKAGE_CACHE_URL}/maven</url>
+            </mirror>
+          </mirrors>
+        </settings>
+        XML
