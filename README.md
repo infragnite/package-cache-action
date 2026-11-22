@@ -15,7 +15,7 @@ permissions:
 
 steps:
   - uses: actions/checkout@v4
-  - uses: infragnite/package-cache-action@v1
+  - uses: infragnite/package-cache-action@<commit sha>   # pin by full commit SHA
     # with:
     #   maven: 'true'   # also Maven (writes ~/.m2/settings.xml)
   - run: ./gradlew build
