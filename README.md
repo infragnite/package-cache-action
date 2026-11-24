@@ -17,7 +17,7 @@ steps:
   - uses: actions/checkout@v4
   - uses: infragnite/package-cache-action@<commit sha>   # pin by full commit SHA
     # with:
-    #   maven: 'true'   # also Maven (writes ~/.m2/settings.xml)
+    #   maven: 'true'   # also Maven (after setup-java, which rewrites ~/.m2/settings.xml)
   - run: ./gradlew build
 ```
 
@@ -25,7 +25,9 @@ Inputs:
 - `url`: the cache, default `https://maven.infragnite.dev`.
 - `gradle` (default `true`): installs an init script that sends Maven Central and Plugin Portal
   repositories to the cache.
-- `maven` (default `false`): writes `~/.m2/settings.xml` with the cache as Central's mirror.
+- `maven` (default `false`): adds the cache as Central's mirror, and its server, to
+  `~/.m2/settings.xml` and keeps the rest of the file. Run it after `actions/setup-java`, which
+  rewrites that file. It fails if another mirror already covers Central.
 
 Outputs `token`, and sets `PACKAGE_CACHE_URL` and `PACKAGE_CACHE_TOKEN` for other downloads:
 `curl -u ci:$PACKAGE_CACHE_TOKEN $PACKAGE_CACHE_URL/gradle-dist/gradle-8.10.2-bin.zip`, or

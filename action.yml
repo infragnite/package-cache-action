@@ -14,7 +14,9 @@ inputs:
     required: false
     default: 'true'
   maven:
-    description: "Send Maven's Central downloads through the cache (writes ~/.m2/settings.xml, which must not exist yet)"
+    description: >-
+      Send Maven's Central downloads through the cache: adds a mirror and its server to ~/.m2/settings.xml,
+      keeping what is there. Run it after anything that rewrites that file, such as actions/setup-java.
     required: false
     default: 'false'
 
@@ -71,28 +73,5 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        settings="$HOME/.m2/settings.xml"
-        if [ -e "$settings" ]; then
-          echo "::error::package-cache: $settings already exists; run this action before anything that writes it"
-          exit 1
-        fi
         mkdir -p "$HOME/.m2"
-        # The token is read from the environment, so it is not written to disk.
-        cat > "$settings" <<'XML'
-        <settings>
-          <servers>
-            <server>
-              <id>package-cache</id>
-              <username>ci</username>
-              <password>${env.PACKAGE_CACHE_TOKEN}</password>
-            </server>
-          </servers>
-          <mirrors>
-            <mirror>
-              <id>package-cache</id>
-              <mirrorOf>central</mirrorOf>
-              <url>${env.PACKAGE_CACHE_URL}/maven</url>
-            </mirror>
-          </mirrors>
-        </settings>
-        XML
+        python3 -I "$GITHUB_ACTION_PATH/maven-settings.py" "$HOME/.m2/settings.xml"
