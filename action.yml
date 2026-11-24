@@ -40,14 +40,17 @@ runs:
           exit 1
         fi
         audience="${CACHE_URL#https://}"
-        oidc_response=$(curl -fsS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+        # GitHub's token service and the cache answer 5xx or 429 at times (a 503 failed a krusty
+        # job on 2026-11-24): curl retries those and timeouts, never a refusal such as 401.
+        retry=(--retry 4 --retry-delay 5 --max-time 30)
+        oidc_response=$(curl -fsS "${retry[@]}" -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
           "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" || true)
         oidc=$(printf '%s' "$oidc_response" | sed -n 's/.*"value":"\([^"]*\)".*/\1/p')
         if [ -z "$oidc" ]; then
           echo "::error::package-cache: GitHub did not issue an OIDC token"
           exit 1
         fi
-        cache_response=$(curl -sS -X POST -H "Authorization: Bearer $oidc" "$CACHE_URL/token" || true)
+        cache_response=$(curl -sS "${retry[@]}" -X POST -H "Authorization: Bearer $oidc" "$CACHE_URL/token" || true)
         token=$(printf '%s' "$cache_response" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
         if [ -z "$token" ]; then
           echo "::error::package-cache: $CACHE_URL refused the OIDC token: $cache_response"
