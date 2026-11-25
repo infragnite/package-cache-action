@@ -24,11 +24,10 @@ steps:
 Inputs:
 - `url`: the cache, default `https://maven.infragnite.dev`.
 - `gradle` (default `true`): installs an init script that sends Maven Central and Plugin Portal
-  repositories to the cache, and fetches the services.gradle.org distribution of every
-  `gradle/wrapper/gradle-wrapper.properties` in the workspace through the cache into the Gradle
-  user home (`wrapper/dists/<name>/<hash>/`), where the wrapper finds it, checks
-  `distributionSha256Sum` and unpacks it. The checkout is not changed. Set `GRADLE_USER_HOME` before
-  this step if the build uses another home, and run it after `actions/checkout`.
+  repositories to the cache, and puts the token in the Gradle user home's `gradle.properties`
+  (`systemProp.gradle.wrapperUser`/`wrapperPassword`) for a wrapper whose `distributionUrl` is on
+  the cache, such as `https\://maven.infragnite.dev/gradle-dist/gradle-8.14.3-bin.zip`. Set
+  `GRADLE_USER_HOME` before this step if the build uses another home.
 - `maven` (default `false`): adds the cache as Central's mirror, and its server, to
   `~/.m2/settings.xml` and keeps the rest of the file. Run it after `actions/setup-java`, which
   rewrites that file. It fails if another mirror already covers Central.

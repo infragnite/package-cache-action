@@ -11,8 +11,8 @@ inputs:
     default: 'https://maven.infragnite.dev'
   gradle:
     description: >-
-      Send Gradle's Maven Central and Plugin Portal downloads through the cache, and fetch the
-      distributions of the workspace's Gradle wrappers through it. Run it after actions/checkout.
+      Send Gradle's Maven Central and Plugin Portal downloads through the cache, and give the Gradle
+      wrapper the token for a distributionUrl on the cache (https://maven.infragnite.dev/gradle-dist/...).
     required: false
     default: 'true'
   maven:
@@ -74,10 +74,24 @@ runs:
         mkdir -p "$init_d"
         cp "$GITHUB_ACTION_PATH/package-cache.init.gradle" "$init_d/package-cache.gradle"
 
-    - name: Fetch the Gradle wrappers' distributions through the cache
+    - name: Give the Gradle wrapper the cache token
       if: inputs.gradle == 'true'
       shell: bash
-      run: python3 -I "$GITHUB_ACTION_PATH/gradle-wrappers.py" "$GITHUB_WORKSPACE" "${GRADLE_USER_HOME:-$HOME/.gradle}"
+      # A wrapper whose distributionUrl names the cache's /gradle-dist route needs the token. It
+      # reads it from the Gradle user home's gradle.properties, also in builds that start with a
+      # clean environment (Gradle TestKit, a test's own ./gradlew).
+      run: |
+        set -euo pipefail
+        home="${GRADLE_USER_HOME:-$HOME/.gradle}"
+        mkdir -p "$home"
+        touch "$home/gradle.properties"
+        chmod 600 "$home/gradle.properties"
+        sed -i '/^systemProp\.gradle\.wrapper\(User\|Password\)=/d' "$home/gradle.properties"
+        [ ! -s "$home/gradle.properties" ] || [ -z "$(tail -c1 "$home/gradle.properties")" ] || echo >> "$home/gradle.properties"
+        {
+          echo 'systemProp.gradle.wrapperUser=ci'
+          echo "systemProp.gradle.wrapperPassword=$PACKAGE_CACHE_TOKEN"
+        } >> "$home/gradle.properties"
 
     - name: Send Maven's downloads through the cache
       if: inputs.maven == 'true'
